@@ -26,7 +26,7 @@ func (v3Api *V3API) validateTicketOwnership(authHeader string) (multiSigAddress 
 		return
 	}
 
-	timestamp, timestampSignature, ticketHash := extractAuthParams(authHeader)
+	timestamp, timestampSignature, ticketHash := extractAuthParams(strings.TrimPrefix(authHeader, customAuthScheme))
 	if timestamp == "" || timestampSignature == "" || ticketHash == "" {
 		log.Warnf("invalid API v3 auth header value %s", authHeader)
 		return
@@ -77,19 +77,24 @@ func (v3Api *V3API) validateTicketOwnership(authHeader string) (multiSigAddress 
 func extractAuthParams(authHeader string) (timestampMessage, timestampSignature, ticketHash string) {
 	authParams := strings.Split(authHeader, ",")
 	for _, param := range authParams {
-		paramKeyValue := strings.Split(param, "=")
-		if len(paramKeyValue) != 2 {
-			continue
-		}
-		if key := strings.TrimSpace(paramKeyValue[0]); key == customAuthTimestampParam {
-			timestampMessage = strings.TrimSpace(paramKeyValue[1])
-		} else if key == customAuthSignatureParam {
-			timestampSignature = strings.TrimSpace(paramKeyValue[1])
-		} else if key == customAuthTicketHashParam {
-			ticketHash = strings.TrimSpace(paramKeyValue[1])
+		paramKeyValue := strings.TrimSpace(param)
+		if value := getAuthValueFromParam(paramKeyValue, customAuthTimestampParam); value != "" {
+			timestampMessage = strings.TrimSpace(value)
+		} else if value := getAuthValueFromParam(paramKeyValue, customAuthSignatureParam); value != "" {
+			timestampSignature = strings.TrimSpace(value)
+		} else if value := getAuthValueFromParam(paramKeyValue, customAuthTicketHashParam); value != "" {
+			ticketHash = strings.TrimSpace(value)
 		}
 	}
 	return
+}
+
+func getAuthValueFromParam(paramKeyValue, key string) string {
+	keyPrefix := key+"="
+	if strings.HasPrefix(paramKeyValue, keyPrefix) {
+		return strings.TrimPrefix(paramKeyValue, keyPrefix)
+	}
+	return ""
 }
 
 func validateTimestamp(timestampMessage string) (error) {
