@@ -1,17 +1,17 @@
 package helpers
 
 import (
-	"strings"
-	"strconv"
-	"time"
 	"github.com/decred/slog"
+	"strconv"
+	"strings"
+	"time"
 )
 
 const (
-	customAuthScheme = "ticket-auth"
-	customAuthTimestampParam = "timestamp"
-	customAuthSignatureParam = "signature"
-	customAuthTicketHashParam = "tickethash"
+	customAuthScheme          = "TicketAuth"
+	customAuthTimestampParam  = "SignedTimestamp"
+	customAuthSignatureParam  = "Signature"
+	customAuthTicketHashParam = "TicketHash"
 
 	authTimestampValiditySeconds = 30
 )

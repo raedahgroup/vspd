@@ -1,16 +1,15 @@
 package controllers
 
 import (
-	"net/http"
-	"github.com/zenazn/goji/web"
 	"crypto/rand"
 	"encoding/base64"
-	"google.golang.org/grpc/codes"
-	"github.com/decred/dcrstakepool/poolapi"
 	"github.com/decred/dcrstakepool/models"
+	"github.com/decred/dcrstakepool/poolapi"
+	"github.com/zenazn/goji/web"
+	"google.golang.org/grpc/codes"
+	"net/http"
 	"strconv"
 )
-
 
 // APIVotingPost is the API version of VotingPost
 func (controller *MainController) APIb(c web.C, r *http.Request) ([]string, codes.Code, string, error) {
@@ -48,7 +47,6 @@ func (controller *MainController) APIb(c web.C, r *http.Request) ([]string, code
 
 	return nil, codes.OK, "successfully updated voting preferences", nil
 }
-
 
 const TicketChallengeByteSize = 32
 

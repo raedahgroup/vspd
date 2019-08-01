@@ -1,14 +1,14 @@
 package v3api
 
 import (
-	"net/http"
-	"strings"
-	"github.com/dgrijalva/jwt-go"
 	"fmt"
-	"github.com/go-gorp/gorp"
 	"github.com/decred/dcrstakepool/models"
+	"github.com/dgrijalva/jwt-go"
+	"github.com/go-gorp/gorp"
 	"github.com/zenazn/goji/web"
+	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
