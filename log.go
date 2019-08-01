@@ -13,9 +13,9 @@ import (
 	"github.com/decred/dcrstakepool/models"
 	"github.com/decred/dcrstakepool/stakepooldclient"
 	"github.com/decred/dcrstakepool/system"
+	"github.com/decred/dcrstakepool/v3api"
 	"github.com/decred/slog"
 	"github.com/jrick/logrotate/rotator"
-	"github.com/decred/dcrstakepool/v3api"
 )
 
 // logWriter implements an io.Writer that outputs to both standard output and
