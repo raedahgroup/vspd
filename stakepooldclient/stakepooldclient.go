@@ -119,10 +119,10 @@ func (s *StakepooldManager) connected() error {
 // GetAddedLowFeeTickets performs gRPC GetAddedLowFeeTickets
 // requests against all stakepoold instances and returns the first result fetched
 // without errors. Returns an error if all RPC requests fail.
-func (s *StakepooldManager) GetTicketInfo(hash []byte) (*pb.GetTicketInfoResponse, error) {
+func (s *StakepooldManager) GetTicketInfo(hash string) (*pb.GetTicketInfoResponse, error) {
 	for i, conn := range s.grpcConnections {
 		client := pb.NewStakepooldServiceClient(conn)
-		resp, err := client.GetTicketInfo(context.Background(), &pb.GetTicketInfoRequest{Hash:hash})
+		resp, err := client.GetTicketInfo(context.Background(), &pb.GetTicketInfoRequest{Hash: hash})
 		if err != nil {
 			log.Warnf("GetTicketInfo RPC failed on stakepoold instance %d: %v", i, err)
 			continue

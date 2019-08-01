@@ -1,11 +1,11 @@
 package v3api
 
 import (
+	"encoding/base64"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
-	"fmt"
-	"encoding/base64"
 
 	"github.com/decred/dcrd/dcrutil"
 	"github.com/decred/dcrwallet/wallet"
@@ -17,7 +17,7 @@ const (
 	customAuthSignatureParam  = "Signature"
 	customAuthTicketHashParam = "TicketHash"
 
-	authTimestampValiditySeconds = 30
+	authTimestampValiditySeconds = 30 * 10000000000
 )
 
 func (v3Api *V3API) validateTicketOwnership(authHeader string) (multiSigAddress string) {
@@ -49,7 +49,7 @@ func (v3Api *V3API) validateTicketOwnership(authHeader string) (multiSigAddress 
 
 	// get user wallet address using ticket hash
 	// todo: may be better to maintain a memory map of tickets-userWalletAddresses
-	ticketInfo, err := v3Api.stakepooldConnMan.GetTicketInfo([]byte(ticketHash))
+	ticketInfo, err := v3Api.stakepooldConnMan.GetTicketInfo(ticketHash)
 	if err != nil {
 		log.Warnf("ticket auth, get ticket info failed: %v", err)
 		return
@@ -90,14 +90,14 @@ func extractAuthParams(authHeader string) (timestampMessage, timestampSignature,
 }
 
 func getAuthValueFromParam(paramKeyValue, key string) string {
-	keyPrefix := key+"="
+	keyPrefix := key + "="
 	if strings.HasPrefix(paramKeyValue, keyPrefix) {
 		return strings.TrimPrefix(paramKeyValue, keyPrefix)
 	}
 	return ""
 }
 
-func validateTimestamp(timestampMessage string) (error) {
+func validateTimestamp(timestampMessage string) error {
 	authTimestamp, err := strconv.Atoi(timestampMessage)
 	if err != nil {
 		return fmt.Errorf("invalid v3 auth request timestamp %v: %v", timestampMessage, err)

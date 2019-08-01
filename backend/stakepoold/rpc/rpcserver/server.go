@@ -194,7 +194,7 @@ func (s *stakepooldServer) GetTicketInfo(ctx context.Context, req *pb.GetTicketI
 
 	return &pb.GetTicketInfoResponse{
 		OwnerFeeAddress: ticketInfo.OwnerFeeAddress,
-		VspFeeAddress: ticketInfo.VspFeeAddress,
+		VspFeeAddress:   ticketInfo.VspFeeAddress,
 		MultiSigAddress: ticketInfo.MultiSigAddress,
 	}, nil
 }
