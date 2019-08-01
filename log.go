@@ -15,6 +15,7 @@ import (
 	"github.com/decred/dcrstakepool/system"
 	"github.com/decred/slog"
 	"github.com/jrick/logrotate/rotator"
+	"github.com/decred/dcrstakepool/v3api"
 )
 
 // logWriter implements an io.Writer that outputs to both standard output and
@@ -50,6 +51,7 @@ var (
 	modelsLog           = backendLog.Logger("MODL")
 	stakepooldclientLog = backendLog.Logger("GRPC")
 	systemLog           = backendLog.Logger("SYTM")
+	v3APILog            = backendLog.Logger("API3")
 )
 
 // Initialize package-global logger variables.
@@ -58,6 +60,7 @@ func init() {
 	models.UseLogger(modelsLog)
 	stakepooldclient.UseLogger(stakepooldclientLog)
 	system.UseLogger(systemLog)
+	v3api.UseLogger(v3APILog)
 }
 
 // subsystemLoggers maps each subsystem identifier to its associated logger.
@@ -67,6 +70,7 @@ var subsystemLoggers = map[string]slog.Logger{
 	"GRPC": stakepooldclientLog,
 	"MODL": modelsLog,
 	"SYTM": systemLog,
+	"API3": v3APILog,
 }
 
 // initLogRotator initializes the logging rotater to write logs to logFile and
