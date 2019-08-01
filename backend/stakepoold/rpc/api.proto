@@ -41,7 +41,7 @@ message GetLiveTicketsResponse {
 }
 
 message GetTicketInfoRequest {
-    bytes Hash = 1;
+    string Hash = 1;
 }
 message GetTicketInfoResponse {
 	string MultiSigAddress = 1;

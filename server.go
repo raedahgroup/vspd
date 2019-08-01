@@ -20,10 +20,10 @@ import (
 	"github.com/decred/dcrstakepool/stakepooldclient"
 	"github.com/decred/dcrstakepool/system"
 
+	"github.com/decred/dcrstakepool/v3api"
 	"github.com/zenazn/goji/graceful"
 	"github.com/zenazn/goji/web"
 	"github.com/zenazn/goji/web/middleware"
-	"github.com/decred/dcrstakepool/v3api"
 )
 
 var (
