@@ -99,6 +99,12 @@ type ticketMetadata struct {
 	err          error                     // log errors along the way
 }
 
+type TicketInfo struct {
+	MultiSigAddress      string
+	VspFeeAddress        string
+	OwnerFeeAddress      string
+}
+
 // EvaluateStakePoolTicket evaluates a voting service ticket to see if it's
 // acceptable to the voting service. The ticket must pay out to the voting
 // service cold wallet, and must have a sufficient fee.
@@ -367,6 +373,51 @@ func (ctx *AppContext) GetTickets(includeImmature bool) ([]*chainhash.Hash, erro
 	}
 
 	return tickets, nil
+}
+
+func (ctx *AppContext) GetTicketInfo(ticketHash []byte) (ticketInfo *TicketInfo, err error) {
+	hash, err := chainhash.NewHash(ticketHash)
+	if err != nil {
+		log.Errorf("GetTicketInfo: Failed to parse ticket hash: %v", err)
+		return
+	}
+
+	res, err := ctx.WalletConnection.GetTransaction(hash)
+	if err != nil {
+		log.Errorf("GetTicketInfo: GetTransaction rpc failed: %v", err)
+		return
+	}
+
+	for i := range res.Details {
+		_, ok := ctx.UserVotingConfig[res.Details[i].Address]
+		if ok {
+			// multisigaddress will match if it belongs a pool user
+			ticketInfo.MultiSigAddress = res.Details[i].Address
+
+			// get sstxcommitment addresses using tx hes
+			msgTx, err := MsgTxFromHex(res.Hex)
+			if err != nil {
+				log.Warnf("MsgTxFromHex failed for %v: %v", res.Hex, err)
+				continue
+			}
+			break
+
+			vspCommitmentOut := msgTx.TxOut[1]
+			vspCommitAddr, err := stake.AddrFromSStxPkScrCommitment(vspCommitmentOut.PkScript, ctx.Params)
+			if err != nil {
+				return nil, fmt.Errorf("Failed to parse commit out addr: %s", err.Error())
+			}
+			ticketInfo.VspFeeAddress = vspCommitAddr.EncodeAddress()
+
+			ownerCommitmentOut := msgTx.TxOut[3]
+			ownerCommitAddr, err := stake.AddrFromSStxPkScrCommitment(ownerCommitmentOut.PkScript, ctx.Params)
+			if err != nil {
+				return nil, fmt.Errorf("Failed to parse commit out addr: %s", err.Error())
+			}
+			ticketInfo.OwnerFeeAddress = ownerCommitAddr.EncodeAddress()
+		}
+	}
+	return
 }
 
 func (ctx *AppContext) StakePoolUserInfo(multisigAddress string) (*wallettypes.StakePoolUserInfoResult, error) {
