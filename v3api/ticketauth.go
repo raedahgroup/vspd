@@ -21,7 +21,8 @@ const (
 )
 
 func (v3Api *V3API) validateTicketOwnership(authHeader string) (multiSigAddress string) {
-	if strings.HasPrefix(authHeader, customAuthScheme) {
+	if !strings.HasPrefix(authHeader, customAuthScheme) {
+		log.Warnf("invalid API v3 auth header value %s", authHeader)
 		return
 	}
 
