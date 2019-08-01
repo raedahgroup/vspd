@@ -108,7 +108,7 @@ func validateTimestamp(timestampMessage string) (error) {
 	// Ensure that the auth timestamp is not in the future and is not more than 30 seconds into the past.
 	timestampDelta := time.Now().Unix() - int64(authTimestamp)
 	if timestampDelta < 0 || timestampDelta > authTimestampValiditySeconds {
-		return fmt.Errorf("expired v3 auth request timestamp %v: %v", timestampMessage, timestampDelta)
+		return fmt.Errorf("expired v3 auth request timestamp %v compared to %v", timestampMessage, time.Now().Unix())
 	}
 
 	return nil
