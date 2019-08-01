@@ -16,6 +16,7 @@ require (
 	github.com/decred/dcrd/wire v1.2.0
 	github.com/decred/dcrdata/api/types/v4 v4.0.2
 	github.com/decred/dcrwallet/rpc/jsonrpc/types v1.1.0
+	github.com/decred/dcrwallet/wallet v1.3.0
 	github.com/decred/dcrwallet/wallet/v2 v2.0.0
 	github.com/decred/slog v1.0.0
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
