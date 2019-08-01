@@ -12,7 +12,7 @@ require (
 	github.com/decred/dcrd/dcrutil v1.4.0
 	github.com/decred/dcrd/hdkeychain v1.1.1
 	github.com/decred/dcrd/rpcclient/v3 v3.0.0
-	github.com/decred/dcrd/txscript v1.0.3-0.20190613214542-d0a6bf024dfc // indirect
+	github.com/decred/dcrd/txscript v1.0.3-0.20190613214542-d0a6bf024dfc
 	github.com/decred/dcrd/wire v1.2.0
 	github.com/decred/dcrdata/api/types/v4 v4.0.2
 	github.com/decred/dcrwallet/rpc/jsonrpc/types v1.1.0
