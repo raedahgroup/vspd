@@ -281,7 +281,7 @@ func (controller *MainController) API(c web.C, r *http.Request) *system.APIRespo
 		case "address":
 			_, code, response, err = controller.APIAddress(c, r)
 		case "purchaseticket":
-			_, code, response, err = controller.APIPurchaseTicket(c, r)
+			data, code, response, err = controller.APIPurchaseTicket(c, r)
 		case "voting":
 			_, code, response, err = controller.APIVoting(c, r)
 		default:
