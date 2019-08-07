@@ -498,10 +498,10 @@ func (controller *MainController) APIPurchaseTicket(c web.C, r *http.Request) (*
 	}
 
 	purchaseInfo := &poolapi.PurchaseInfo{
-		PoolAddress:   user.UserFeeAddr,
+		PoolAddress:   userFeeAddr.EncodeAddress(),
 		PoolFees:      controller.poolFees,
-		Script:        user.MultiSigScript,
-		TicketAddress: user.MultiSigAddress,
+		Script:        createMultiSig.RedeemScript,
+		TicketAddress: createMultiSig.Address,
 		VoteBits:      uint16(user.VoteBits),
 	}
 	return purchaseInfo, codes.OK, "APIPurchaseTicket: purchaseinfo generated for userPubKeyAddr", nil
