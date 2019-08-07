@@ -406,16 +406,13 @@ func (controller *MainController) APIPurchaseTicket(c web.C, r *http.Request) (*
 		return purchaseInfo, codes.OK, "APIPurchaseTicket: purchaseinfo retrieved for existing userPubKeyAddr", nil
 	}
 
-	//token := models.NewUserToken()
 	user = &models.User{
 		Username:        userPubKeyAddr,
 		Email:           userPubKeyAddr,
-		//EmailToken:      token.String(),
 		EmailVerified:   0,
 		VoteBits:        1,
 		VoteBitsVersion: int64(controller.voteVersion),
 	}
-	//user.HashPassword(password)
 
 	remoteIP := getClientIP(r, controller.realIPHeader)
 	log.Infof("APIPurchaseTicket POST from %v, created new user account %v. Inserting.", remoteIP, user.Email)
