@@ -362,7 +362,7 @@ func (controller *MainController) APIAddress(c web.C, r *http.Request) ([]string
 		return nil, codes.Unavailable, "system error", errors.New("unable to process wallet commands")
 	}
 
-	userFeeAddr, err := controller.FeeAddressForUserID(int(user.Id))
+	userFeeAddr, err := controller.FeeAddressForUserID(userId)
 	if err != nil {
 		log.Warnf("unexpected error deriving pool addr: %s", err.Error())
 		return nil, codes.Unavailable, "system error", errors.New("unable to process wallet commands")
@@ -372,7 +372,7 @@ func (controller *MainController) APIAddress(c web.C, r *http.Request) ([]string
 		createMultiSig.RedeemScript, poolPubKeyAddr, userPubKeyAddr,
 		userFeeAddr.EncodeAddress(), importedHeight)
 
-	log.Infof("successfully create multisigaddress for user %d", c.Env["APIUserID"])
+	log.Infof("successfully create multisigaddress for user %d", int(user.Id))
 
 	err = controller.StakepooldUpdateUsers(dbMap)
 	if err != nil {
@@ -425,10 +425,10 @@ func (controller *MainController) APIPurchaseTicket(c web.C, r *http.Request) (*
 
 	// load saved user info from db to get the user id
 	user = models.GetUserByEmail(dbMap, userPubKeyAddr)
-	userId := user.Id
+	userId := int(user.Id)
 
 	// Get the ticket address for this user
-	pooladdress, err := controller.TicketAddressForUserID(int(userId))
+	pooladdress, err := controller.TicketAddressForUserID(userId)
 	if err != nil {
 		log.Errorf("unable to derive ticket address: %v", err)
 		return nil, codes.Unavailable, "system error", errors.New("unable to process wallet commands")
@@ -487,7 +487,7 @@ func (controller *MainController) APIPurchaseTicket(c web.C, r *http.Request) (*
 		createMultiSig.RedeemScript, poolPubKeyAddr, userPubKeyAddr,
 		userFeeAddr.EncodeAddress(), importedHeight)
 
-	log.Infof("successfully create multisigaddress for user %d", c.Env["APIUserID"])
+	log.Infof("successfully create multisigaddress for user %d", userId)
 
 	err = controller.StakepooldUpdateUsers(dbMap)
 	if err != nil {
