@@ -1646,9 +1646,11 @@ func (controller *MainController) LoginPost(c web.C, r *http.Request) (string, i
 
 	log.Infof("Login POST from %v, email %v", remoteIP, user.Email)
 
-	if user.EmailVerified == 0 {
-		session.AddFlash("You must validate your email address", "loginError")
-		return controller.Login(c, r)
+	if verified := user.EmailVerified; controller.getNetworkName() != "testnet" {
+		if verified == 0 {
+			session.AddFlash("You must validate your email address", "loginError")
+			return controller.Login(c, r)
+		}
 	}
 
 	session.Values["UserId"] = user.Id
@@ -1760,12 +1762,14 @@ func (controller *MainController) RegisterPost(c web.C, r *http.Request) (string
 		return controller.Register(c, r)
 	}
 
-	err = controller.emailSender.Registration(email, controller.baseURL, remoteIP, token.String())
-	if err != nil {
-		session.AddFlash("Unable to send verification email", "registrationError")
-		log.Errorf("error sending verification email %v", err)
-	} else {
-		session.AddFlash("A verification email has been sent to "+email, "registrationSuccess")
+	if controller.getNetworkName() != "testnet" {
+		err = controller.emailSender.Registration(email, controller.baseURL, remoteIP, token.String())
+		if err != nil {
+			session.AddFlash("Unable to send verification email", "registrationError")
+			log.Errorf("error sending verification email %v", err)
+		} else {
+			session.AddFlash("A verification email has been sent to "+email, "registrationSuccess")
+		}
 	}
 
 	return controller.Register(c, r)
