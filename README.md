@@ -167,9 +167,8 @@ you will need to change `publicpath` and `templatepath` from their relative path
 ## Supplementary info
 
 ### Building binaries from source
-_PS: This assumes that you have installed Go 1.11 or later and you have added `$GOPATH/bin` to your `PATH` environment variable.
-Please do so before proceeding if you haven't already.
-You can access the go installation guide [here](http://golang.org/doc/install)._
+- Requires [Go](http://golang.org) 1.11.13 or newer (1.12 is recommended).
+- Also need to add `$GOPATH/bin` to your `PATH` environment variable.
 
 #### Decred binaries from source
 The following bash code builds the dcrd and dcrctl binaries and places them in `$GOPATH/src/github.com/decred/dcrd`.
