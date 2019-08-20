@@ -533,58 +533,6 @@ func loadConfig() (*config, []string, error) {
 		cfg.AdminUserIDs = strings.Split(cfg.AdminUserIDs[0], ",")
 	}
 
-	// Add default wallet port for the active network if there's no port specified
-	cfg.WalletHosts = normalizeAddresses(cfg.WalletHosts, activeNetParams.WalletRPCServerPort)
-
-	// Check if deprecated minservers config option is set
-	if cfg.MinServers != 0 {
-		str := "%s: Config minservers is deprecated.  Please remove from your config file"
-		log.Warnf(str, funcName)
-	}
-
-	if len(cfg.WalletHosts) < minRequiredBackendServers {
-		str := "%s: you must specify at least %d wallethosts"
-		err := fmt.Errorf(str, funcName, minRequiredBackendServers)
-		fmt.Fprintln(os.Stderr, err)
-		return nil, nil, err
-	}
-
-	if len(cfg.WalletHosts) != len(cfg.WalletUsers) {
-		str := "%s: wallet configuration mismatch (walletusers and wallethosts counts differ)"
-		err := fmt.Errorf(str, funcName)
-		fmt.Fprintln(os.Stderr, err)
-		return nil, nil, err
-	}
-
-	if len(cfg.WalletHosts) != len(cfg.WalletPasswords) {
-		str := "%s: wallet configuration mismatch (walletpasswords and wallethosts counts differ)"
-		err := fmt.Errorf(str, funcName)
-		fmt.Fprintln(os.Stderr, err)
-		return nil, nil, err
-	}
-
-	if len(cfg.WalletHosts) != len(cfg.WalletCerts) {
-		str := "%s: wallet configuration mismatch (walletcerts and wallethosts counts differ)"
-		err := fmt.Errorf(str, funcName)
-		fmt.Fprintln(os.Stderr, err)
-		return nil, nil, err
-	}
-
-	for idx := range cfg.WalletCerts {
-		if !fileExists(cfg.WalletCerts[idx]) {
-			path := filepath.Join(dcrstakepoolHomeDir, cfg.WalletCerts[idx])
-			if !fileExists(path) {
-				str := "%s: walletcert " + cfg.WalletCerts[idx] + " and " +
-					path + " don't exist"
-				err := fmt.Errorf(str, funcName)
-				fmt.Fprintln(os.Stderr, err)
-				return nil, nil, err
-			}
-
-			cfg.WalletCerts[idx] = path
-		}
-	}
-
 	if len(cfg.StakepooldHosts) == 0 {
 		str := "%s: stakepooldhosts is not set in config"
 		err := fmt.Errorf(str, funcName)
@@ -604,9 +552,9 @@ func loadConfig() (*config, []string, error) {
 
 	// Add default stakepoold port for the active network if there's
 	// no port specified
-	// todo: for mainnet (production) deployment, should check that
-	// - cfg.MinServers is not less than 2 DIFFERENT servers
-	// - no stakepoold host IP resolves to the same machine used for dcrstakepool (localhost)
+	// todo: for mainnet (production) deployment,
+	// todo: should check that no stakepoold host IP resolves to the same machine used for dcrstakepool (localhost)
+	// todo: and the multiple IPs are actually for different servers
 	cfg.StakepooldHosts = normalizeAddresses(cfg.StakepooldHosts,
 		activeNetParams.StakepooldRPCServerPort)
 	if len(cfg.StakepooldHosts) < minRequiredBackendServers {
@@ -645,6 +593,11 @@ func loadConfig() (*config, []string, error) {
 	// Warn about deprecated config items if they have been set
 	if cfg.EnableStakepoold {
 		str := "%s: Config enablestakepoold is deprecated. Please remove from your config file"
+		log.Warnf(str, funcName)
+	}
+
+	if cfg.MinServers != 0 {
+		str := "%s: Config minservers is deprecated.  Please remove from your config file"
 		log.Warnf(str, funcName)
 	}
 

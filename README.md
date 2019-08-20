@@ -153,13 +153,6 @@ Following config values must be set:
   Important to enable access to the stakepoold port on each backend server.
   - `stakepooldcerts` - relative or absolute path to rpc cert files for all backend servers, separated by comma.
   Each backend rpc cert file should have been copied [while setting up stakepoold on the server](#Set-up-and-run-stakepoold).
-  - `wallethosts` - IP address for the dcrwallet daemons on all backend servers, separated by comma.
-  Important to enable access to the dcrwallet port on each backend server.
-  - `walletcerts` - relative or absolute path to rpc cert files for the dcrwallet daemons on all backend servers, separated by comma.
-  Each rpc cert file should have been copied [while setting up the voting wallet on the server](#Set-up-the-voting-wallet).
-  - `walletusers`, `walletpasswords` - comma separated list of rpc username and password for the dcrwallet daemons on all backend servers.
-  These info should have been copied/noted down [while setting up the voting wallet on the server](#Set-up-the-voting-wallet).
-  - `minservers` (optional) - minimum number of stakepoold backend servers required for dcrstakepool to run. Default is 2.
 - If the `dcrstakepool` binary is not in the same directory as the [public](public) and [views](views) folders,
 you will need to change `publicpath` and `templatepath` from their relative paths to an absolute path in `dcrstakepool.conf`.
 - Run `dcrstakepool`.
