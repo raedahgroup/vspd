@@ -343,7 +343,7 @@ func (controller *MainController) APIAddress(c web.C, r *http.Request) ([]string
 		return nil, codes.Unavailable, "system error", errors.New("unable to process wallet commands")
 	}
 
-	userFeeAddr, err := controller.FeeAddressForUserID(userId)
+	userFeeAddr, err := controller.FeeAddressForUserID(int(user.Id))
 	if err != nil {
 		log.Warnf("unexpected error deriving pool addr: %s", err.Error())
 		return nil, codes.Unavailable, "system error", errors.New("unable to process wallet commands")
@@ -367,8 +367,7 @@ func (controller *MainController) APIAddress(c web.C, r *http.Request) ([]string
 func (controller *MainController) APIPurchaseTicket(c web.C, r *http.Request) (*poolapi.PurchaseInfo, codes.Code, string, error) {
 	userPubKeyAddr := r.FormValue("UserPubKeyAddr")
 
-	u, err := validateUserPubKeyAddr(userPubKeyAddr)
-	if err != nil {
+	if _, err := validateUserPubKeyAddr(userPubKeyAddr); err != nil {
 		return nil, codes.InvalidArgument, "address error", err
 	}
 
@@ -398,7 +397,7 @@ func (controller *MainController) APIPurchaseTicket(c web.C, r *http.Request) (*
 	remoteIP := getClientIP(r, controller.realIPHeader)
 	log.Infof("APIPurchaseTicket POST from %v, created new user account %v. Inserting.", remoteIP, user.Email)
 
-	err = models.InsertUser(dbMap, user)
+	err := models.InsertUser(dbMap, user)
 	if err != nil {
 		log.Errorf("Error while creating new user account for ticket purchase: %v", err)
 		return nil, codes.Unavailable, "system error", errors.New("unable to setup db entry for purchase")
@@ -409,7 +408,7 @@ func (controller *MainController) APIPurchaseTicket(c web.C, r *http.Request) (*
 	userId := int(user.Id)
 
 	// Get the ticket address for this user
-	pooladdress, err := controller.TicketAddressForUserID(userId)
+	pooladdress, err := controller.TicketAddressForUserID(int(user.Id))
 	if err != nil {
 		log.Errorf("unable to derive ticket address: %v", err)
 		return nil, codes.Unavailable, "system error", errors.New("unable to process wallet commands")
@@ -428,29 +427,22 @@ func (controller *MainController) APIPurchaseTicket(c web.C, r *http.Request) (*
 
 	poolPubKeyAddr := poolValidateAddress.PubKeyAddr
 
-	p, err := dcrutil.DecodeAddress(poolPubKeyAddr)
-	if err != nil {
-		controller.handlePotentialFatalError("DecodeAddress poolPubKeyAddr", err)
+	if _, err = dcrutil.DecodeAddress(poolPubKeyAddr); err != nil {
 		return nil, codes.Unavailable, "system error", errors.New("unable to process wallet commands")
 	}
 
-	if controller.RPCIsStopped() {
-		return nil, codes.Unavailable, "system error", errors.New("unable to process wallet commands")
-	}
-	createMultiSig, err := controller.rpcServers.CreateMultisig(1, []dcrutil.Address{p, u})
+	createMultiSig, err := controller.StakepooldServers.CreateMultisig([]string{poolPubKeyAddr, userPubKeyAddr})
 	if err != nil {
-		controller.handlePotentialFatalError("CreateMultisig", err)
 		return nil, codes.Unavailable, "system error", errors.New("unable to process wallet commands")
 	}
 
-	// Serialize the RedeemScript (hex string -> []byte)
+	// Serialize the redeem script (hex string -> []byte)
 	serializedScript, err := hex.DecodeString(createMultiSig.RedeemScript)
 	if err != nil {
-		controller.handlePotentialFatalError("CreateMultisig DecodeString", err)
 		return nil, codes.Unavailable, "system error", errors.New("unable to process wallet commands")
 	}
 
-	// Import the RedeemScript
+	// Import the redeem script
 	var importedHeight int64
 	importedHeight, err = controller.StakepooldServers.ImportScript(serializedScript)
 	if err != nil {
