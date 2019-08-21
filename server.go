@@ -20,7 +20,6 @@ import (
 	"github.com/decred/dcrstakepool/stakepooldclient"
 	"github.com/decred/dcrstakepool/system"
 
-	"github.com/decred/dcrstakepool/v3api"
 	"github.com/zenazn/goji/graceful"
 	"github.com/zenazn/goji/web"
 	"github.com/zenazn/goji/web/middleware"
@@ -64,7 +63,7 @@ func runMain() error {
 
 	var application = &system.Application{}
 
-	application.Init(cfg.APISecret, cfg.BaseURL, cfg.CookieSecret,
+	application.Init(cfg.APISecret, cfg.TicketChallengeMaxAge, cfg.BaseURL, cfg.CookieSecret,
 		cfg.CookieSecure, cfg.DBHost, cfg.DBName, cfg.DBPassword, cfg.DBPort,
 		cfg.DBUser)
 	if application.DbMap == nil {
@@ -89,6 +88,8 @@ func runMain() error {
 	if err != nil {
 		return fmt.Errorf("Failed to connect to stakepoold host: %v", err)
 	}
+
+	application.StakepooldConnMan = stakepooldConnMan
 
 	var sender email.Sender
 	if cfg.SMTPHost != "" {
@@ -166,12 +167,8 @@ func runMain() error {
 
 	api.Use(application.ApplyAPI)
 
-	v3Api := v3api.New(stakepooldConnMan, cfg.TicketChallengeMaxAge)
-	api.Use(v3Api.ApplyTicketAuth)
-
 	api.Handle("/api/v1/:command", application.APIHandler(controller.API))
 	api.Handle("/api/v2/:command", application.APIHandler(controller.API))
-	api.Handle("/api/v3/:command", application.APIHandler(controller.API))
 	api.Handle("/api/*", gojify(system.APIInvalidHandler))
 
 	// HTML routes

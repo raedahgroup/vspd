@@ -22,7 +22,6 @@ import (
 	"github.com/decred/dcrd/dcrutil"
 	"github.com/decred/dcrd/hdkeychain"
 	"github.com/decred/dcrstakepool/internal/version"
-	"github.com/decred/dcrstakepool/v3api"
 	flags "github.com/jessevdk/go-flags"
 )
 
@@ -51,6 +50,8 @@ const (
 	defaultMaxVotedTickets       = 1000
 	defaultDescription           = ""
 	defaultDesignation           = ""
+
+	MaxTicketChallengeAge = 60 * 30 // 30 minutes
 )
 
 var (
@@ -486,9 +487,9 @@ func loadConfig() (*config, []string, error) {
 	}
 
 	// Ensure ticket challenge max age is not greater than permitted maximum.
-	if cfg.TicketChallengeMaxAge > v3api.MaxTicketChallengeAge {
-		return nil, nil, fmt.Errorf("%s: Tickat challenge max age cannot be higher than %v",
-			funcName, v3api.MaxTicketChallengeAge)
+	if cfg.TicketChallengeMaxAge > MaxTicketChallengeAge {
+		return nil, nil, fmt.Errorf("%s: Ticket challenge max age cannot be higher than %v",
+			funcName, MaxTicketChallengeAge)
 	}
 
 	// Validate profile port number
