@@ -1646,7 +1646,7 @@ func (controller *MainController) LoginPost(c web.C, r *http.Request) (string, i
 
 	log.Infof("Login POST from %v, email %v", remoteIP, user.Email)
 
-	if (user.EmailVerified == 0) {
+	if user.EmailVerified == 0 {
 		session.AddFlash("You must validate your email address", "loginError")
 		return controller.Login(c, r)
 	}
