@@ -80,7 +80,7 @@ func runMain() error {
 	rpcclient.UseLogger(log)
 
 	// Supported API versions are advertised in the API stats result
-	APIVersionsSupported := []int{1, 2, 3}
+	APIVersionsSupported := []int{1, 2}
 
 	var stakepooldConnMan *stakepooldclient.StakepooldManager
 
