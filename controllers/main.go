@@ -1715,12 +1715,14 @@ func (controller *MainController) RegisterPost(c web.C, r *http.Request) (string
 		return controller.Register(c, r)
 	}
 
-	err = controller.emailSender.Registration(email, controller.baseURL, remoteIP, token.String())
-	if err != nil {
-		session.AddFlash("Unable to send verification email", "registrationError")
-		log.Errorf("error sending verification email %v", err)
-	} else {
-		session.AddFlash("A verification email has been sent to "+email, "registrationSuccess")
+	if controller.getNetworkName() != "testnet" {
+		err = controller.emailSender.Registration(email, controller.baseURL, remoteIP, token.String())
+		if err != nil {
+			session.AddFlash("Unable to send verification email", "registrationError")
+			log.Errorf("error sending verification email %v", err)
+		} else {
+			session.AddFlash("A verification email has been sent to "+email, "registrationSuccess")
+		}
 	}
 
 	return controller.Register(c, r)
