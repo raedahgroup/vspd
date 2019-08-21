@@ -6,7 +6,10 @@
 package main
 
 import (
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"os"
 	"path/filepath"
@@ -42,7 +45,6 @@ const (
 	defaultPublicPath      = "public"
 	defaultTemplatePath    = "views"
 	defaultSMTPHost        = ""
-	defaultMinServers      = 2
 	defaultMaxVotedTickets = 1000
 	defaultDescription     = ""
 	defaultDesignation     = ""
@@ -65,49 +67,50 @@ var runServiceCommand func(string) error
 //
 // See loadConfig for details on the configuration load process.
 type config struct {
-	ShowVersion bool   `short:"V" long:"version" description:"Display version information and exit"`
-	ConfigFile  string `short:"C" long:"configfile" description:"Path to configuration file"`
-	DataDir     string `short:"b" long:"datadir" description:"Directory to store data"`
-	LogDir      string `long:"logdir" description:"Directory to log output."`
-	Listen      string `long:"listen" description:"Listen for connections on the specified interface/port (default all interfaces port: 9113, testnet: 19113)"`
-	TestNet     bool   `long:"testnet" description:"Use the test network"`
-	SimNet      bool   `long:"simnet" description:"Use the simulation test network"`
-	Profile     string `long:"profile" description:"Enable HTTP profiling on given port -- NOTE port must be between 1024 and 65536"`
-	CPUProfile  string `long:"cpuprofile" description:"Write CPU profile to the specified file"`
-	MemProfile  string `long:"memprofile" description:"Write mem profile to the specified file"`
-	DebugLevel  string `short:"d" long:"debuglevel" description:"Logging level for all subsystems {trace, debug, info, warn, error, critical} -- You may also specify <subsystem>=<level>,<subsystem2>=<level>,... to set the log level for individual subsystems -- Use show to list available subsystems"`
-	APISecret   string `long:"apisecret" description:"Secret string used to encrypt API tokens."`
-	BaseURL     string `long:"baseurl" description:"BaseURL to use when sending links via email"`
+	ShowVersion        bool    `short:"V" long:"version" description:"Display version information and exit"`
+	ConfigFile         string  `short:"C" long:"configfile" description:"Path to configuration file"`
+	DataDir            string  `short:"b" long:"datadir" description:"Directory to store data"`
+	LogDir             string  `long:"logdir" description:"Directory to log output."`
+	Listen             string  `long:"listen" description:"Listen for connections on the specified interface/port (default all interfaces port: 9113, testnet: 19113)"`
+	TestNet            bool    `long:"testnet" description:"Use the test network"`
+	SimNet             bool    `long:"simnet" description:"Use the simulation test network"`
+	Profile            string  `long:"profile" description:"Enable HTTP profiling on given port -- NOTE port must be between 1024 and 65536"`
+	CPUProfile         string  `long:"cpuprofile" description:"Write CPU profile to the specified file"`
+	MemProfile         string  `long:"memprofile" description:"Write mem profile to the specified file"`
+	DebugLevel         string  `short:"d" long:"debuglevel" description:"Logging level for all subsystems {trace, debug, info, warn, error, critical} -- You may also specify <subsystem>=<level>,<subsystem2>=<level>,... to set the log level for individual subsystems -- Use show to list available subsystems"`
+	APISecret          string  `long:"apisecret" description:"Secret string used to encrypt API tokens."`
+	BaseURL            string  `long:"baseurl" description:"BaseURL to use when sending links via email"`
 	// todo: can `ColdWalletExtPub` and `PoolFees` be read from stakepoold via rpc?
-	ColdWalletExtPub string `long:"coldwalletextpub" description:"The extended public key for addresses to which voting service user fees are sent."`
-	ClosePool        bool   `long:"closepool" description:"Disable user registration actions (sign-ups and submitting addresses)"`
-	ClosePoolMsg     string `long:"closepoolmsg" description:"Message to display when closepool is set."`
-	CookieSecret     string `long:"cookiesecret" description:"Secret string used to encrypt session data."`
-	CookieSecure     bool   `long:"cookiesecure" description:"Set whether cookies can be sent in clear text or not."`
-	// todo: possible to use a single db instance on stakepoold and access via rpc?
-	DBHost          string   `long:"dbhost" description:"Hostname for database connection"`
-	DBUser          string   `long:"dbuser" description:"Username for database connection"`
-	DBPassword      string   `long:"dbpassword" description:"Password for database connection"`
-	DBPort          string   `long:"dbport" description:"Port for database connection"`
-	DBName          string   `long:"dbname" description:"Name of database"`
-	PublicPath      string   `long:"publicpath" description:"Path to the public folder which contains css/fonts/images/javascript."`
-	TemplatePath    string   `long:"templatepath" description:"Path to the views folder which contains html files."`
-	PoolEmail       string   `long:"poolemail" description:"Email address to for support inquiries"`
-	PoolFees        float64  `long:"poolfees" description:"The per-ticket fees the user must send to the pool with their tickets"`
-	PoolLink        string   `long:"poollink" description:"URL for support inquiries such as forum, IRC, etc"`
-	RealIPHeader    string   `long:"realipheader" description:"The name of an HTTP request header containing the actual remote client IP address, typically set by a reverse proxy. An empty string (default) indicates to use net/Request.RemodeAddr."`
-	SMTPFrom        string   `long:"smtpfrom" description:"From address to use on outbound mail"`
-	SMTPHost        string   `long:"smtphost" description:"SMTP hostname/ip and port, e.g. mail.example.com:25"`
-	SMTPUsername    string   `long:"smtpusername" description:"SMTP username for authentication if required"`
-	SMTPPassword    string   `long:"smtppassword" description:"SMTP password for authentication if required"`
-	UseSMTPS        bool     `long:"usesmtps" description:"Connect to the SMTP server using smtps."`
-	StakepooldHosts []string `long:"stakepooldhosts" description:"Hostnames for stakepoold servers"`
-	StakepooldCerts []string `long:"stakepooldcerts" description:"Certificate paths for stakepoold servers"`
-	// todo: should be possible to communicate to backend wallets via stakepoold rpc instead
-	WalletHosts     []string `long:"wallethosts" description:"Hostnames for wallet servers"`
-	WalletUsers     []string `long:"walletusers" description:"Usernames for wallet servers"`
-	WalletPasswords []string `long:"walletpasswords" description:"Passwords for wallet servers"`
-	WalletCerts     []string `long:"walletcerts" description:"Certificate paths for wallet servers"`
+	ColdWalletExtPub   string  `long:"coldwalletextpub" description:"The extended public key for addresses to which voting service user fees are sent."`
+	ClosePool          bool    `long:"closepool" description:"Disable user registration actions (sign-ups and submitting addresses)"`
+	ClosePoolMsg       string  `long:"closepoolmsg" description:"Message to display when closepool is set."`
+	CookieSecret       string  `long:"cookiesecret" description:"Secret string used to encrypt session data."`
+	CookieSecure       bool    `long:"cookiesecure" description:"Set whether cookies can be sent in clear text or not."`
+	DBHost             string  `long:"dbhost" description:"Hostname for database connection"`
+	DBUser             string  `long:"dbuser" description:"Username for database connection"`
+	DBPassword         string  `long:"dbpassword" description:"Password for database connection"`
+	DBPort             string  `long:"dbport" description:"Port for database connection"`
+	DBName             string  `long:"dbname" description:"Name of database"`
+	PublicPath         string  `long:"publicpath" description:"Path to the public folder which contains css/fonts/images/javascript."`
+	TemplatePath       string  `long:"templatepath" description:"Path to the views folder which contains html files."`
+	PoolEmail          string  `long:"poolemail" description:"Email address to for support inquiries"`
+	PoolFees           float64 `long:"poolfees" description:"The per-ticket fees the user must send to the pool with their tickets"`
+	PoolLink           string  `long:"poollink" description:"URL for support inquiries such as forum, IRC, etc"`
+	RealIPHeader       string  `long:"realipheader" description:"The name of an HTTP request header containing the actual remote client IP address, typically set by a reverse proxy. An empty string (default) indicates to use net/Request.RemodeAddr."`
+	SMTPFrom           string  `long:"smtpfrom" description:"From address to use on outbound mail"`
+	SMTPHost           string  `long:"smtphost" description:"SMTP hostname/ip and port, e.g. mail.example.com:25"`
+	SMTPUsername       string  `long:"smtpusername" description:"SMTP username for authentication if required"`
+	SMTPPassword       string  `long:"smtppassword" description:"SMTP password for authentication if required"`
+	UseSMTPS           bool    `long:"usesmtps" description:"Connect to the SMTP server using smtps."`
+	SMTPSkipVerify     bool    `long:"smtpskipverify" description:"Skip SMTP TLS cert verification. Will only skip if SMTPCert is empty"`
+	SMTPCert           string  `long:"smtpcert" description:"Path for the smtp certificate file"`
+	SystemCerts        *x509.CertPool
+	StakepooldHosts    []string `long:"stakepooldhosts" description:"Hostnames for stakepoold servers"`
+	StakepooldCerts    []string `long:"stakepooldcerts" description:"Certificate paths for stakepoold servers"`
+	WalletHosts        []string `long:"wallethosts" description:"Deprecated: dcrstakepool no longer connects to dcrwallet"`
+	WalletUsers        []string `long:"walletusers" description:"Deprecated: dcrstakepool no longer connects to dcrwallet"`
+	WalletPasswords    []string `long:"walletpasswords" description:"Deprecated: dcrstakepool no longer connects to dcrwallet"`
+	WalletCerts        []string `long:"walletcerts" description:"Deprecated: dcrstakepool no longer connects to dcrwallet"`
 	// todo: `VotingWalletExtPub` can be read from the vsp backend dcrwallet via stakepoold rpc instead!
 	VotingWalletExtPub string   `long:"votingwalletextpub" description:"The extended public key of the default account of the voting wallet"`
 	AdminIPs           []string `long:"adminips" description:"Expected admin host"`
@@ -333,7 +336,6 @@ func loadConfig() (*config, []string, error) {
 		PublicPath:      defaultPublicPath,
 		TemplatePath:    defaultTemplatePath,
 		SMTPHost:        defaultSMTPHost,
-		MinServers:      defaultMinServers,
 		MaxVotedTickets: defaultMaxVotedTickets,
 		Description:     defaultDescription,
 		Designation:     defaultDesignation,
@@ -433,13 +435,16 @@ func loadConfig() (*config, []string, error) {
 		return nil, nil, err
 	}
 
-	// assign active network params
+	// Assign active network params and min required backend servers
+	var minRequiredBackendServers = 2
 	activeNetParams = &mainNetParams
 	if cfg.TestNet {
 		activeNetParams = &testNet3Params
+		minRequiredBackendServers = 1
 	} else if cfg.SimNet {
 		// Also disable dns seeding on the simulation test network.
 		activeNetParams = &simNetParams
+		minRequiredBackendServers = 1
 	}
 
 	// Append the network type to the data directory so it is "namespaced"
@@ -527,98 +532,12 @@ func loadConfig() (*config, []string, error) {
 		return nil, nil, err
 	}
 
-	if len(cfg.WalletHosts) == 0 {
-		str := "%s: wallethosts is not set in config"
-		err := fmt.Errorf(str, funcName)
-		fmt.Fprintln(os.Stderr, err)
-		return nil, nil, err
-	}
-
-	if len(cfg.WalletCerts) == 0 {
-		str := "%s: walletcerts is not set in config"
-		err := fmt.Errorf(str, funcName)
-		fmt.Fprintln(os.Stderr, err)
-		return nil, nil, err
-	}
-
-	if len(cfg.WalletUsers) == 0 {
-		str := "%s: walletusers is not set in config"
-		err := fmt.Errorf(str, funcName)
-		fmt.Fprintln(os.Stderr, err)
-		return nil, nil, err
-	}
-
-	if len(cfg.WalletPasswords) == 0 {
-		str := "%s: walletpasswords is not set in config"
-		err := fmt.Errorf(str, funcName)
-		fmt.Fprintln(os.Stderr, err)
-		return nil, nil, err
-	}
-
 	// Convert comma separated list into a slice
 	if len(cfg.AdminIPs) > 0 {
 		cfg.AdminIPs = strings.Split(cfg.AdminIPs[0], ",")
 	}
 	if len(cfg.AdminUserIDs) > 0 {
 		cfg.AdminUserIDs = strings.Split(cfg.AdminUserIDs[0], ",")
-	}
-	if len(cfg.WalletHosts) > 0 {
-		cfg.WalletHosts = strings.Split(cfg.WalletHosts[0], ",")
-	}
-	if len(cfg.WalletUsers) > 0 {
-		cfg.WalletUsers = strings.Split(cfg.WalletUsers[0], ",")
-	}
-	if len(cfg.WalletPasswords) > 0 {
-		cfg.WalletPasswords = strings.Split(cfg.WalletPasswords[0], ",")
-	}
-	if len(cfg.WalletCerts) > 0 {
-		cfg.WalletCerts = strings.Split(cfg.WalletCerts[0], ",")
-	}
-
-	// Add default wallet port for the active network if there's no port specified
-	cfg.WalletHosts = normalizeAddresses(cfg.WalletHosts, activeNetParams.WalletRPCServerPort)
-
-	if len(cfg.WalletHosts) < cfg.MinServers {
-		str := "%s: you must specify at least %d wallethosts"
-		err := fmt.Errorf(str, funcName, cfg.MinServers)
-		fmt.Fprintln(os.Stderr, err)
-		return nil, nil, err
-	}
-
-	if len(cfg.WalletHosts) != len(cfg.WalletUsers) {
-		str := "%s: wallet configuration mismatch (walletusers and wallethosts counts differ)"
-		err := fmt.Errorf(str, funcName)
-		fmt.Fprintln(os.Stderr, err)
-		return nil, nil, err
-	}
-
-	if len(cfg.WalletHosts) != len(cfg.WalletPasswords) {
-		str := "%s: wallet configuration mismatch (walletpasswords and wallethosts counts differ)"
-		err := fmt.Errorf(str, funcName)
-		fmt.Fprintln(os.Stderr, err)
-		return nil, nil, err
-	}
-
-	if len(cfg.WalletHosts) != len(cfg.WalletCerts) {
-		str := "%s: wallet configuration mismatch (walletcerts and wallethosts counts differ)"
-		err := fmt.Errorf(str, funcName)
-		fmt.Fprintln(os.Stderr, err)
-		return nil, nil, err
-	}
-
-	for idx := range cfg.WalletCerts {
-		if !fileExists(cfg.WalletCerts[idx]) {
-			path := filepath.Join(dcrstakepoolHomeDir, cfg.WalletCerts[idx])
-			if !fileExists(path) {
-				str := "%s: walletcert " + cfg.WalletCerts[idx] + " and " +
-					path + " don't exist"
-				err := fmt.Errorf(str, funcName)
-				fmt.Fprintln(os.Stderr, err)
-				return nil, nil, err
-			}
-
-			cfg.WalletCerts[idx] = path
-		}
 	}
 
 	if len(cfg.StakepooldHosts) == 0 {
@@ -645,9 +564,9 @@ func loadConfig() (*config, []string, error) {
 	// - no stakepoold host IP resolves to the same machine used for dcrstakepool (localhost)
 	cfg.StakepooldHosts = normalizeAddresses(cfg.StakepooldHosts,
 		activeNetParams.StakepooldRPCServerPort)
-	if len(cfg.StakepooldHosts) < cfg.MinServers {
+	if len(cfg.StakepooldHosts) < minRequiredBackendServers {
 		str := "%s: you must specify at least %d stakepooldhosts"
-		err := fmt.Errorf(str, funcName, cfg.MinServers)
+		err := fmt.Errorf(str, funcName, minRequiredBackendServers)
 		fmt.Fprintln(os.Stderr, err)
 		return nil, nil, err
 	}
@@ -678,14 +597,64 @@ func loadConfig() (*config, []string, error) {
 		}
 	}
 
+	// Validate smtp root cert.
+	if cfg.SMTPCert != "" {
+		cfg.SMTPCert = cleanAndExpandPath(cfg.SMTPCert)
+
+		b, err := ioutil.ReadFile(cfg.SMTPCert)
+		if err != nil {
+			return nil, nil, fmt.Errorf("read smtpcert: %v", err)
+		}
+		block, _ := pem.Decode(b)
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return nil, nil, fmt.Errorf("parse smtpcert: %v", err)
+		}
+		systemCerts, err := x509.SystemCertPool()
+		if err != nil {
+			return nil, nil, fmt.Errorf("getting systemcertpool: %v", err)
+		}
+		systemCerts.AddCert(cert)
+		cfg.SystemCerts = systemCerts
+
+		if cfg.SMTPSkipVerify {
+			log.Warnf("SMTPCert has been set so SMTPSkipVerify is being disregarded.")
+		}
+	}
+
 	// Warn about deprecated config items if they have been set
 	if cfg.EnableStakepoold {
-		str := "%s: Config enablestakepoold is deprecated.  Please remove from your config file"
+		str := "%s: Config enablestakepoold is deprecated. Please remove from your config file"
 		log.Warnf(str, funcName)
 	}
 
 	if cfg.MaxVotedAge != 0 {
 		str := "%s: Config maxVotedAge is deprecated and has no effect. Use maxVotedTickets instead"
+		log.Warnf(str, funcName)
+	}
+
+	if cfg.MinServers != 0 {
+		str := "%s: Config minservers is deprecated. Please remove from your config file"
+		log.Warnf(str, funcName)
+	}
+
+	if len(cfg.WalletHosts) > 0 {
+		str := "%s: Config WalletHosts is deprecated and has no effect. Please remove from your config file"
+		log.Warnf(str, funcName)
+	}
+
+	if len(cfg.WalletCerts) > 0 {
+		str := "%s: Config WalletCerts is deprecated and has no effect. Please remove from your config file"
+		log.Warnf(str, funcName)
+	}
+
+	if len(cfg.WalletUsers) > 0 {
+		str := "%s: Config WalletUsers is deprecated and has no effect. Please remove from your config file"
+		log.Warnf(str, funcName)
+	}
+
+	if len(cfg.WalletPasswords) > 0 {
+		str := "%s: Config WalletPasswords is deprecated and has no effect. Please remove from your config file"
 		log.Warnf(str, funcName)
 	}
 

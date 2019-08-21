@@ -33,8 +33,8 @@ const (
 	// collection cycle to also trigger a timeout but the current allocation
 	// pattern of stakepoold is not known to cause such conditions at this time.
 	GRPCCommandTimeout = time.Millisecond * 100
-	semverString       = "5.0.0"
-	semverMajor        = 5
+	semverString       = "7.0.0"
+	semverMajor        = 7
 	semverMinor        = 0
 	semverPatch        = 0
 )
@@ -109,10 +109,6 @@ func (s *stakepooldServer) GetLiveTickets(c context.Context, req *pb.GetLiveTick
 
 	tickets := processTickets(ticketsMSA)
 	return &pb.GetLiveTicketsResponse{Tickets: tickets}, nil
-}
-
-func (s *stakepooldServer) Ping(ctx context.Context, req *pb.PingRequest) (*pb.PingResponse, error) {
-	return &pb.PingResponse{}, nil
 }
 
 func (s *stakepooldServer) SetAddedLowFeeTickets(ctx context.Context, req *pb.SetAddedLowFeeTicketsRequest) (*pb.SetAddedLowFeeTicketsResponse, error) {
@@ -228,7 +224,10 @@ func (s *stakepooldServer) WalletInfo(ctx context.Context, req *pb.WalletInfoReq
 	}
 
 	return &pb.WalletInfoResponse{
-		VoteVersion: response.VoteVersion,
+		VoteVersion:     response.VoteVersion,
+		DaemonConnected: response.DaemonConnected,
+		Unlocked:        response.Unlocked,
+		Voting:          response.Voting,
 	}, nil
 }
 
@@ -241,5 +240,42 @@ func (s *stakepooldServer) ValidateAddress(ctx context.Context, req *pb.Validate
 	return &pb.ValidateAddressResponse{
 		IsMine:     response.IsMine,
 		PubKeyAddr: response.PubKeyAddr,
+	}, nil
+}
+
+func (s *stakepooldServer) CreateMultisig(ctx context.Context, req *pb.CreateMultisigRequest) (*pb.CreateMultisigResponse, error) {
+	response, err := s.appContext.CreateMultisig(req.Address)
+	if err != nil {
+		return nil, err
+	}
+
+	return &pb.CreateMultisigResponse{
+		RedeemScript: response.RedeemScript,
+		Address:      response.Address,
+	}, nil
+}
+
+func (s *stakepooldServer) GetStakeInfo(ctx context.Context, req *pb.GetStakeInfoRequest) (*pb.GetStakeInfoResponse, error) {
+	response, err := s.appContext.GetStakeInfo()
+	if err != nil {
+		return nil, err
+	}
+	return &pb.GetStakeInfoResponse{
+		BlockHeight:      response.BlockHeight,
+		Difficulty:       response.Difficulty,
+		TotalSubsidy:     response.TotalSubsidy,
+		OwnMempoolTix:    response.OwnMempoolTix,
+		Immature:         response.Immature,
+		Unspent:          response.Unspent,
+		Voted:            response.Voted,
+		Revoked:          response.Revoked,
+		UnspentExpired:   response.UnspentExpired,
+		PoolSize:         response.PoolSize,
+		AllMempoolTix:    response.AllMempoolTix,
+		Live:             response.Live,
+		ProportionLive:   response.ProportionLive,
+		Missed:           response.Missed,
+		ProportionMissed: response.ProportionMissed,
+		Expired:          response.Expired,
 	}, nil
 }

@@ -6,14 +6,17 @@ package controllers
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dchest/captcha"
@@ -21,6 +24,7 @@ import (
 	"github.com/decred/dcrd/chaincfg/chainhash"
 	"github.com/decred/dcrd/dcrutil"
 	"github.com/decred/dcrd/hdkeychain"
+	dcrdatatypes "github.com/decred/dcrdata/api/types/v4"
 	"github.com/decred/dcrstakepool/email"
 	"github.com/decred/dcrstakepool/helpers"
 	"github.com/decred/dcrstakepool/internal/version"
@@ -28,7 +32,6 @@ import (
 	"github.com/decred/dcrstakepool/poolapi"
 	"github.com/decred/dcrstakepool/stakepooldclient"
 	"github.com/decred/dcrstakepool/system"
-	wallettypes "github.com/decred/dcrwallet/rpc/jsonrpc/types"
 	"github.com/decred/dcrwallet/wallet/v2/udb"
 	"github.com/go-gorp/gorp"
 	"github.com/gorilla/csrf"
@@ -42,6 +45,8 @@ const (
 	// This is an artificial limit and can be increased by adjusting the
 	// ticket/fee address indexes above 10000.
 	MaxUsers = 10000
+	// agendasCacheLife is the amount of time to keep agenda data in memory.
+	agendasCacheLife = time.Hour
 )
 
 // MainController is the wallet RPC controller type.  Its methods include the
@@ -57,14 +62,12 @@ type MainController struct {
 	baseURL              string
 	closePool            bool
 	closePoolMsg         string
-	enableStakepoold     bool
 	feeXpub              *hdkeychain.ExtendedKey
 	StakepooldServers    *stakepooldclient.StakepooldManager
 	poolEmail            string
 	poolFees             float64
 	poolLink             string
 	params               *chaincfg.Params
-	rpcServers           *walletSvrManager
 	realIPHeader         string
 	captchaHandler       *CaptchaHandler
 	emailSender          email.Sender
@@ -73,6 +76,25 @@ type MainController struct {
 	maxVotedTickets      int
 	description          string
 	designation          string
+}
+
+// agendasCache holds the current available agendas for agendasCacheLife. Should
+// be accessed through MainController's agendas method.
+var agendasCache agendasMux
+
+// agenda links an agenda to its status. Possible statuses are upcoming,
+// in progress, finished, failed, or locked in.
+type agenda struct {
+	Agenda chaincfg.ConsensusDeployment
+	Status string
+}
+
+// agendasMux allows for concurrency safe access to agendasCache. Lock must be
+// held for read/writes.
+type agendasMux struct {
+	sync.Mutex
+	timer   time.Time
+	agendas *[]agenda
 }
 
 // Get the client's real IP address using the X-Real-IP header, or if that is
@@ -101,15 +123,9 @@ func NewMainController(params *chaincfg.Params, adminIPs []string,
 	adminUserIDs []string, APISecret string, APIVersionsSupported []int, baseURL string,
 	closePool bool, closePoolMsg string, feeKey *hdkeychain.ExtendedKey,
 	stakepooldConnMan *stakepooldclient.StakepooldManager, poolFees float64,
-	poolEmail, poolLink string, emailSender email.Sender, walletHosts, walletCerts,
-	walletUsers, walletPasswords []string, minServers int, realIPHeader string,
+	poolEmail, poolLink string, emailSender email.Sender, realIPHeader string,
 	voteKey *hdkeychain.ExtendedKey, maxVotedTickets int, description string,
 	designation string) (*MainController, error) {
-
-	rpcs, err := newWalletSvrManager(walletHosts, walletCerts, walletUsers, walletPasswords, minServers)
-	if err != nil {
-		return nil, err
-	}
 
 	ch := &CaptchaHandler{
 		ImgHeight: 127,
@@ -131,7 +147,6 @@ func NewMainController(params *chaincfg.Params, adminIPs []string,
 		poolLink:             poolLink,
 		params:               params,
 		captchaHandler:       ch,
-		rpcServers:           rpcs,
 		realIPHeader:         realIPHeader,
 		emailSender:          emailSender,
 		votingXpub:           voteKey,
@@ -140,15 +155,34 @@ func NewMainController(params *chaincfg.Params, adminIPs []string,
 		designation:          designation,
 	}
 
-	voteVersion, err := stakepooldConnMan.VoteVersion()
-	if err != nil || voteVersion == 0 {
+	walletInfo, err := stakepooldConnMan.WalletInfo()
+	if err != nil {
 		cErr := fmt.Errorf("Failed to get wallets' Vote Version: %v", err)
 		return nil, cErr
 	}
 
-	log.Infof("All wallets are VoteVersion %d", voteVersion)
+	// Ensure vote version matches on all wallets
+	lastVersion := uint32(0)
+	var lastServer int
+	firstrun := true
+	for k, v := range walletInfo {
+		if firstrun {
+			firstrun = false
+			lastVersion = v.VoteVersion
+		}
 
-	mc.voteVersion = voteVersion
+		if v.VoteVersion != lastVersion {
+			vErr := fmt.Errorf("wallets %d and %d have mismatched vote versions",
+				k, lastServer)
+			return nil, vErr
+		}
+
+		lastServer = k
+	}
+
+	log.Infof("All wallets are VoteVersion %d", lastVersion)
+
+	mc.voteVersion = lastVersion
 
 	return mc, nil
 }
@@ -162,6 +196,63 @@ func (controller *MainController) getNetworkName() string {
 		return "testnet"
 	}
 	return controller.params.Name
+}
+
+// agendas returns agendas and their statuses. Fetches agenda status from
+// dcrdata.org if past agenda.Timer limit from previous fetch. Caches agenda
+// data for agendasCacheLife. This method is safe for concurrent use.
+func (controller *MainController) agendas() []agenda {
+	agendasCache.Lock()
+	defer agendasCache.Unlock()
+	now := time.Now()
+	if agendasCache.timer.After(now) {
+		return *agendasCache.agendas
+	}
+	agendasCache.timer = now.Add(agendasCacheLife)
+	url := fmt.Sprintf("https://%s.dcrdata.org/api/agendas", controller.getNetworkName())
+	agendaInfos, err := dcrDataAgendas(url)
+	if err != nil {
+		// Ensure the next call tries to fetch statuses again.
+		agendasCache.timer = time.Time{}
+		log.Warnf("unable to retrieve data from %v: %v", url, err)
+		// If we have initialized agendas, return that.
+		if agendasCache.agendas != nil {
+			return *agendasCache.agendas
+		}
+	}
+	agendaArray := controller.getAgendas()
+	agendasNew := make([]agenda, len(agendaArray))
+	// populate agendas
+	for n, agenda := range agendaArray {
+		agendasNew[n].Agenda = agenda
+		// find status for id
+		for _, info := range agendaInfos {
+			if info.Name == agenda.Vote.Id {
+				agendasNew[n].Status = info.Status.String()
+				break
+			}
+		}
+	}
+	agendasCache.agendas = &agendasNew
+	return *agendasCache.agendas
+}
+
+// dcrDataAgendas gets json data for current agendas from url. url is either
+// https://testnet.dcrdata.org/api/agendas or https://mainnet.dcrdata.org/api/agendas
+func dcrDataAgendas(url string) ([]*dcrdatatypes.AgendasInfo, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	a := []*dcrdatatypes.AgendasInfo{}
+	if err = json.Unmarshal(data, &a); err != nil {
+		return nil, err
+	}
+	return a, nil
 }
 
 // API is the main frontend that handles all API requests.
@@ -222,8 +313,7 @@ func (controller *MainController) APIAddress(c web.C, r *http.Request) ([]string
 
 	userPubKeyAddr := r.FormValue("UserPubKeyAddr")
 
-	u, err := validateUserPubKeyAddr(userPubKeyAddr)
-	if err != nil {
+	if _, err := validateUserPubKeyAddr(userPubKeyAddr); err != nil {
 		return nil, codes.InvalidArgument, "address error", err
 	}
 
@@ -247,29 +337,22 @@ func (controller *MainController) APIAddress(c web.C, r *http.Request) ([]string
 
 	poolPubKeyAddr := poolValidateAddress.PubKeyAddr
 
-	p, err := dcrutil.DecodeAddress(poolPubKeyAddr)
-	if err != nil {
-		controller.handlePotentialFatalError("DecodeAddress poolPubKeyAddr", err)
+	if _, err = dcrutil.DecodeAddress(poolPubKeyAddr); err != nil {
 		return nil, codes.Unavailable, "system error", errors.New("unable to process wallet commands")
 	}
 
-	if controller.RPCIsStopped() {
-		return nil, codes.Unavailable, "system error", errors.New("unable to process wallet commands")
-	}
-	createMultiSig, err := controller.rpcServers.CreateMultisig(1, []dcrutil.Address{p, u})
+	createMultiSig, err := controller.StakepooldServers.CreateMultisig([]string{poolPubKeyAddr, userPubKeyAddr})
 	if err != nil {
-		controller.handlePotentialFatalError("CreateMultisig", err)
 		return nil, codes.Unavailable, "system error", errors.New("unable to process wallet commands")
 	}
 
-	// Serialize the RedeemScript (hex string -> []byte)
+	// Serialize the redeem script (hex string -> []byte)
 	serializedScript, err := hex.DecodeString(createMultiSig.RedeemScript)
 	if err != nil {
-		controller.handlePotentialFatalError("CreateMultisig DecodeString", err)
 		return nil, codes.Unavailable, "system error", errors.New("unable to process wallet commands")
 	}
 
-	// Import the RedeemScript
+	// Import the redeem script
 	var importedHeight int64
 	importedHeight, err = controller.StakepooldServers.ImportScript(serializedScript)
 	if err != nil {
@@ -329,11 +412,7 @@ func (controller *MainController) APIStats(c web.C,
 	userCount := models.GetUserCount(dbMap)
 	userCountActive := models.GetUserCountActive(dbMap)
 
-	if controller.RPCIsStopped() {
-		return nil, codes.Unavailable, "stats error", errors.New("RPC server stopped")
-	}
-
-	gsi, err := controller.rpcServers.GetStakeInfo()
+	gsi, err := controller.StakepooldServers.GetStakeInfo()
 	if err != nil {
 		log.Infof("RPC GetStakeInfo failed: %v", err)
 		return nil, codes.Unavailable, "stats error", errors.New("RPC server error")
@@ -539,7 +618,7 @@ func (controller *MainController) RPCSync(dbMap *gorp.DbMap) error {
 		return err
 	}
 
-	err = walletSvrsSync(controller.rpcServers, controller.StakepooldServers, multisigScripts)
+	err = controller.StakepooldServers.SyncAll(multisigScripts, MaxUsers)
 	return err
 }
 
@@ -608,38 +687,6 @@ func (controller *MainController) CheckAndResetUserVoteBits(dbMap *gorp.DbMap) (
 	return allUsers, nil
 }
 
-// RPCStart starts the connected rpcServers.
-func (controller *MainController) RPCStart() {
-	controller.rpcServers.Start()
-}
-
-// RPCStop stops the connected rpcServers.
-func (controller *MainController) RPCStop() error {
-	return controller.rpcServers.Stop()
-}
-
-// RPCIsStopped checks to see if w.shutdown is set or not.
-func (controller *MainController) RPCIsStopped() bool {
-	return controller.rpcServers.IsStopped()
-}
-
-// WalletStatus returns current WalletInfo from all rpcServers.
-func (controller *MainController) WalletStatus() ([]*wallettypes.WalletInfoResult, error) {
-	return controller.rpcServers.WalletStatus()
-}
-
-// handlePotentialFatalError is a helper function to do log possibly
-// fatal rpc errors and also stops the servers to avoid any potential
-// further damage.
-func (controller *MainController) handlePotentialFatalError(fn string, err error) {
-	cnErr, ok := err.(connectionError)
-	if ok {
-		log.Infof("RPC %s failed on connection error: %v", fn, cnErr)
-	}
-	controller.RPCStop()
-	log.Infof("RPC %s failed: %v", fn, err)
-}
-
 // Address renders the address page.
 func (controller *MainController) Address(c web.C, r *http.Request) (string, int) {
 	t := controller.GetTemplate(c)
@@ -653,6 +700,7 @@ func (controller *MainController) Address(c web.C, r *http.Request) (string, int
 
 	c.Env["Admin"], _ = controller.isAdmin(c, r)
 	c.Env["IsAddress"] = true
+	c.Env["PoolFees"] = controller.poolFees
 	c.Env["Network"] = controller.getNetworkName()
 
 	c.Env["Flash"] = session.Flashes("address")
@@ -735,8 +783,7 @@ func (controller *MainController) AddressPost(c web.C, r *http.Request) (string,
 
 	log.Infof("Address POST from %v, pubkeyaddr %v", remoteIP, userPubKeyAddr)
 
-	u, err := validateUserPubKeyAddr(userPubKeyAddr)
-	if err != nil {
+	if _, err := validateUserPubKeyAddr(userPubKeyAddr); err != nil {
 		session.AddFlash(err.Error(), "address")
 		return controller.Address(c, r)
 	}
@@ -750,12 +797,8 @@ func (controller *MainController) AddressPost(c web.C, r *http.Request) (string,
 	}
 
 	// From new address (pkh), get pubkey address
-	if controller.RPCIsStopped() {
-		return "/error", http.StatusSeeOther
-	}
 	poolValidateAddress, err := controller.StakepooldServers.ValidateAddress(pooladdress)
 	if err != nil {
-		controller.handlePotentialFatalError("ValidateAddress pooladdress", err)
 		return "/error", http.StatusSeeOther
 	}
 	if !poolValidateAddress.IsMine {
@@ -767,30 +810,23 @@ func (controller *MainController) AddressPost(c web.C, r *http.Request) (string,
 	poolPubKeyAddr := poolValidateAddress.PubKeyAddr
 
 	// Get back Address from pool's new pubkey address
-	p, err := dcrutil.DecodeAddress(poolPubKeyAddr)
-	if err != nil {
-		controller.handlePotentialFatalError("DecodeAddress poolPubKeyAddr", err)
+	if _, err = dcrutil.DecodeAddress(poolPubKeyAddr); err != nil {
 		return "/error", http.StatusSeeOther
 	}
 
-	// Create the the multisig script. Result includes a P2SH and RedeemScript.
-	if controller.RPCIsStopped() {
-		return "/error", http.StatusSeeOther
-	}
-	createMultiSig, err := controller.rpcServers.CreateMultisig(1, []dcrutil.Address{p, u})
+	// Create the the multisig script. Result includes a P2SH and redeem script.
+	createMultiSig, err := controller.StakepooldServers.CreateMultisig([]string{poolPubKeyAddr, userPubKeyAddr})
 	if err != nil {
-		controller.handlePotentialFatalError("CreateMultisig", err)
 		return "/error", http.StatusSeeOther
 	}
 
-	// Serialize the RedeemScript (hex string -> []byte)
+	// Serialize the redeem script (hex string -> []byte)
 	serializedScript, err := hex.DecodeString(createMultiSig.RedeemScript)
 	if err != nil {
-		controller.handlePotentialFatalError("CreateMultisig DecodeString", err)
 		return "/error", http.StatusSeeOther
 	}
 
-	// Import the RedeemScript
+	// Import the redeem script
 	var importedHeight int64
 	importedHeight, err = controller.StakepooldServers.ImportScript(serializedScript)
 	if err != nil {
@@ -826,75 +862,7 @@ func (controller *MainController) AdminStatus(c web.C, r *http.Request) (string,
 		return "", http.StatusUnauthorized
 	}
 
-	type stakepooldInfoPage struct {
-		RPCStatus string
-	}
-
-	stakepooldRPCStatus := controller.StakepooldServers.RPCStatus()
-
-	stakepooldPageInfo := make([]stakepooldInfoPage, len(stakepooldRPCStatus))
-
-	for i, grpcStatus := range stakepooldRPCStatus {
-		stakepooldPageInfo[i] = stakepooldInfoPage{
-			RPCStatus: grpcStatus,
-		}
-	}
-
-	// Attempt to query wallet statuses
-	walletInfo, err := controller.WalletStatus()
-	if err != nil {
-		log.Errorf("Failed to execute WalletStatus: %v", err)
-		return "/error", http.StatusSeeOther
-	}
-
-	type WalletInfoPage struct {
-		Connected       bool
-		DaemonConnected bool
-		Unlocked        bool
-		EnableVoting    bool
-	}
-	walletPageInfo := make([]WalletInfoPage, len(walletInfo))
-	var connectedWallets int
-	for i, v := range walletInfo {
-		// If something is nil in the slice means it is disconnected.
-		if v == nil {
-			walletPageInfo[i] = WalletInfoPage{
-				Connected: false,
-			}
-			controller.rpcServers.DisconnectWalletRPC(i)
-			err = controller.rpcServers.ReconnectWalletRPC(i)
-			if err != nil {
-				log.Infof("wallet rpc reconnect failed: server %v %v", i, err)
-			}
-			continue
-		}
-		// Wallet has been successfully queried.
-		connectedWallets++
-		walletPageInfo[i] = WalletInfoPage{
-			Connected:       true,
-			DaemonConnected: v.DaemonConnected,
-			EnableVoting:    v.Voting,
-			Unlocked:        v.Unlocked,
-		}
-	}
-
-	// Depending on how many wallets have been detected update RPCStatus.
-	// Admins can then use to monitor this page periodically and check status.
-	var rpcstatus string
-	allWallets := len(walletInfo)
-
-	if connectedWallets == allWallets {
-		rpcstatus = "OK"
-	} else {
-		switch connectedWallets {
-		case 0:
-			rpcstatus = "Emergency"
-		case 1:
-			rpcstatus = "Critical"
-		default:
-			rpcstatus = "Degraded"
-		}
-	}
+	backendStatus := controller.StakepooldServers.BackendStatus()
 
 	t := controller.GetTemplate(c)
 	c.Env["Admin"] = isAdmin
@@ -902,18 +870,12 @@ func (controller *MainController) AdminStatus(c web.C, r *http.Request) (string,
 	c.Env["Title"] = "Decred Voting Service - Status (Admin)"
 
 	// Set info to be used by admins on /status page.
-	c.Env["StakepooldInfo"] = stakepooldPageInfo
-	c.Env["WalletInfo"] = walletPageInfo
-	c.Env["RPCStatus"] = rpcstatus
+	c.Env["BackendStatus"] = backendStatus
 
 	widgets := controller.Parse(t, "admin/status", c.Env)
 	c.Env["Designation"] = controller.designation
 
 	c.Env["Content"] = template.HTML(widgets)
-
-	if controller.RPCIsStopped() {
-		return controller.Parse(t, "main", c.Env), http.StatusInternalServerError
-	}
 
 	return controller.Parse(t, "main", c.Env), http.StatusOK
 }
@@ -1230,16 +1192,9 @@ func (controller *MainController) EmailVerify(c web.C, r *http.Request) (string,
 func (controller *MainController) Error(c web.C, r *http.Request) (string, int) {
 	t := controller.GetTemplate(c)
 
-	var rpcstatus = "Running"
-
-	if controller.RPCIsStopped() {
-		rpcstatus = "Stopped"
-	}
-
 	c.Env["Admin"], _ = controller.isAdmin(c, r)
 	c.Env["IsError"] = true
 	c.Env["Title"] = "Decred VSP - Error"
-	c.Env["RPCStatus"] = rpcstatus
 	c.Env["RateLimited"] = r.URL.Query().Get("rl")
 
 	widgets := controller.Parse(t, "error", c.Env)
@@ -1262,7 +1217,7 @@ func (controller *MainController) Index(c web.C, r *http.Request) (string, int) 
 	c.Env["CustomDescription"] = controller.description
 	c.Env["PoolLink"] = controller.poolLink
 
-	gsi, err := controller.rpcServers.GetStakeInfo()
+	gsi, err := controller.StakepooldServers.GetStakeInfo()
 	if err != nil {
 		log.Infof("RPC GetStakeInfo failed: %v", err)
 		return "/error?r=/stats", http.StatusSeeOther
@@ -1783,10 +1738,7 @@ func (controller *MainController) Stats(c web.C, r *http.Request) (string, int) 
 	userCount := models.GetUserCount(dbMap)
 	userCountActive := models.GetUserCountActive(dbMap)
 
-	if controller.RPCIsStopped() {
-		return "/error", http.StatusSeeOther
-	}
-	gsi, err := controller.rpcServers.GetStakeInfo()
+	gsi, err := controller.StakepooldServers.GetStakeInfo()
 	if err != nil {
 		log.Infof("RPC GetStakeInfo failed: %v", err)
 		return "/error?r=/stats", http.StatusSeeOther
@@ -1876,7 +1828,6 @@ func (controller *MainController) Tickets(c web.C, r *http.Request) (string, int
 
 	c.Env["IsTickets"] = true
 	c.Env["Network"] = controller.getNetworkName()
-	c.Env["PoolFees"] = controller.poolFees
 	c.Env["Title"] = "Decred VSP - Tickets"
 
 	dbMap := controller.GetDbMap(c)
@@ -1885,10 +1836,6 @@ func (controller *MainController) Tickets(c web.C, r *http.Request) (string, int
 	if user.MultiSigAddress == "" {
 		log.Info("Multisigaddress empty")
 		return "/address", http.StatusSeeOther
-	}
-
-	if controller.RPCIsStopped() {
-		return "/error", http.StatusSeeOther
 	}
 
 	// Get P2SH Address
@@ -1906,10 +1853,8 @@ func (controller *MainController) Tickets(c web.C, r *http.Request) (string, int
 	spui, err := controller.StakepooldServers.StakePoolUserInfo(multisig.String())
 	if err != nil {
 		// Render page with message to try again later
-		log.Infof("RPC StakePoolUserInfo failed: %v", err)
-		session.AddFlash("Unable to retrieve voting service user info", "main")
-		c.Env["Flash"] = session.Flashes("main")
-		return controller.Parse(t, "main", c.Env), http.StatusInternalServerError
+		log.Errorf("RPC StakePoolUserInfo failed: %v", err)
+		return "/error", http.StatusSeeOther
 	}
 
 	log.Debugf(":: StakePoolUserInfo (msa = %v) execution time: %v",
@@ -2019,7 +1964,7 @@ func (controller *MainController) Voting(c web.C, r *http.Request) (string, int)
 		c.Env["Agenda"+strk+"Selected"] = v
 	}
 	c.Env["Admin"], _ = controller.isAdmin(c, r)
-	c.Env["Agendas"] = controller.getAgendas()
+	c.Env["Agendas"] = controller.agendas()
 	c.Env["FlashError"] = session.Flashes("votingError")
 	c.Env["FlashSuccess"] = session.Flashes("votingSuccess")
 	c.Env["IsVoting"] = true
@@ -2128,7 +2073,6 @@ func (controller *MainController) getAgendas() []chaincfg.ConsensusDeployment {
 	if controller.params.Deployments == nil {
 		return nil
 	}
-
 	return controller.params.Deployments[controller.voteVersion]
 
 }

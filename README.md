@@ -12,10 +12,11 @@ vote on their behalf when the ticket is selected.
 
 ## Architecture
 
-![Voting Service Architecture](https://i.imgur.com/2JDA9dl.png)
+![Voting Service Architecture](img/architecture.png)
 
-- It is highly recommended to use 3 dcrd+dcrwallet+stakepoold nodes for
+- It is highly recommended to use at least 2 dcrd+dcrwallet+stakepoold nodes for
   production use on mainnet.
+  Can use 1 dcrd+dcrwallet+stakepoold node (backend server) on testnet.
 - The architecture is subject to change in the future to lessen the dependence
   on dcrwallet and MySQL.
 
@@ -152,13 +153,6 @@ Following config values must be set:
   Important to enable access to the stakepoold port on each backend server.
   - `stakepooldcerts` - relative or absolute path to rpc cert files for all backend servers, separated by comma.
   Each backend rpc cert file should have been copied [while setting up stakepoold on the server](#Set-up-and-run-stakepoold).
-  - `wallethosts` - IP address for the dcrwallet daemons on all backend servers, separated by comma.
-  Important to enable access to the dcrwallet port on each backend server.
-  - `walletcerts` - relative or absolute path to rpc cert files for the dcrwallet daemons on all backend servers, separated by comma.
-  Each rpc cert file should have been copied [while setting up the voting wallet on the server](#Set-up-the-voting-wallet).
-  - `walletusers`, `walletpasswords` - comma separated list of rpc username and password for the dcrwallet daemons on all backend servers.
-  These info should have been copied/noted down [while setting up the voting wallet on the server](#Set-up-the-voting-wallet).
-  - `minservers` (optional) - minimum number of stakepoold backend servers required for dcrstakepool to run. Default is 2.
 - If the `dcrstakepool` binary is not in the same directory as the [public](public) and [views](views) folders,
 you will need to change `publicpath` and `templatepath` from their relative paths to an absolute path in `dcrstakepool.conf`.
 - Run `dcrstakepool`.
@@ -167,9 +161,9 @@ you will need to change `publicpath` and `templatepath` from their relative path
 ## Supplementary info
 
 ### Building binaries from source
-_PS: This assumes that you have installed Go 1.11 or later and you have added `$GOPATH/bin` to your `PATH` environment variable.
-Please do so before proceeding if you haven't already.
-You can access the go installation guide [here](http://golang.org/doc/install)._
+Building or updating from source requires only an installation of Go 1.11.13 or newer (1.12 is recommended).
+([instructions](http://golang.org/doc/install)). It is recommended to add
+`$GOPATH/bin` to your `PATH` at this point.
 
 #### Decred binaries from source
 The following bash code builds the dcrd and dcrctl binaries and places them in `$GOPATH/src/github.com/decred/dcrd`.
@@ -201,6 +195,35 @@ GO111MODULE=on go build
 
 - Adapt sample-nginx.conf or setup a different web server in a proxy
   configuration.
+
+## Test Harness
+
+A test harness is provided in `./harness.sh`. The test harness uses tmux to start
+a dcrd node, multiple dcrwallet and stakepoold instances, and finally a dcrstakepool
+instance. It uses hard-coded wallet seeds and pubkeys, and as a result it is only
+suitable for use on testnet. To use the harness:
+
+```bash
+./harness.sh
+```
+
+While the web interface should become available almost immediately, it will take a
+short while for dcrstakepool to become fully functional because the wallets need to
+sync and complete a re-scan before they can be used.
+
+The harness makes a few assumptions
+
+- tmux is installed
+- dcrd, dcrwallet, stakepoold and dcrstakepool are available on $PATH
+- testnet blockchain is already downloaded and sync'd
+- MySQL is configured at 127.0.0.1:3306
+- Database `stakepool` and user `stakepool` with password `password` exist
+- The following files exist:
+  - `${HOME}/.dcrd/rpc.cert`
+  - `${HOME}/.dcrd/rpc.key`
+  - `${HOME}/.dcrwallet/rpc.cert`
+  - `${HOME}/.dcrwallet/rpc.key`
+  - `${HOME}/.stakepoold/rpc.cert`
 
 ## Git Tip Release notes
 
@@ -282,6 +305,7 @@ If you are modifying templates, sending the USR1 signal to the dcrstakepool
 process will trigger a template reload.
 
 ### Protoc
+
 In order to regenerate the api.pb.go file, for the gRPC connection with
 stakepoold, the following are required:
 
@@ -295,7 +319,7 @@ stakepoold, the following are required:
 - dcrstakepool will create the stakepool.Users table automatically if it doesn't
   exist.
 
-- dcrstakepool attempts to connect to all of the wallet servers on startup or
+- dcrstakepool attempts to connect to all of the stakepoold servers on startup or
   error out if it cannot do so.
 
 - dcrstakepool takes a user's pubkey, validates it, calls getnewaddress on all

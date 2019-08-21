@@ -6,7 +6,9 @@ package email
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"net/url"
 
 	"github.com/dajohi/goemail"
 )
@@ -17,7 +19,8 @@ type Sender struct {
 }
 
 func NewSender(smtpHost string, smtpUsername string, smtpPassword string,
-	smtpFrom string, useSMTPS bool) (Sender, error) {
+	smtpFrom string, useSMTPS bool, systemCerts *x509.CertPool,
+	skipVerify bool) (Sender, error) {
 	// Format: smtp://[username[:password]@]host
 	smtpURL := "smtp://"
 	if useSMTPS {
@@ -27,14 +30,21 @@ func NewSender(smtpHost string, smtpUsername string, smtpPassword string,
 	if smtpUsername != "" {
 		smtpURL += smtpUsername
 		if smtpPassword != "" {
-			smtpURL += ":" + smtpPassword
+			smtpURL += ":" + url.QueryEscape(smtpPassword)
 		}
 		smtpURL += "@"
 	}
 	smtpURL += smtpHost
 
-	tlsConfig := tls.Config{}
-	smtpServer, err := goemail.NewSMTP(smtpURL, &tlsConfig)
+	// Config tlsConfig based on config settings
+	tlsConfig := &tls.Config{}
+	if systemCerts == nil && skipVerify {
+		tlsConfig.InsecureSkipVerify = true
+	} else if systemCerts != nil {
+		tlsConfig.RootCAs = systemCerts
+	}
+
+	smtpServer, err := goemail.NewSMTP(smtpURL, tlsConfig)
 	if err != nil {
 		return Sender{}, err
 	}
