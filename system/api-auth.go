@@ -54,7 +54,8 @@ func (application *Application) validateTicketOwnership(authHeader string) (mult
 	// Ensure that the auth timestamp is not in the future and is not more than 30 seconds into the past.
 	timestampDelta := time.Now().Unix() - int64(authTimestamp)
 	if timestampDelta < 0 || timestampDelta > application.TicketChallengeMaxAge {
-		authValidationFailureReason = fmt.Sprintf("expired ticket auth timestamp value %v", timestamp)
+		authValidationFailureReason = fmt.Sprintf("expired ticket auth timestamp value %v, expired by %d second",
+			timestamp, timestampDelta)
 		return
 	}
 
