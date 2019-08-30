@@ -33,7 +33,7 @@ const (
 	defaultLogLevel              = "info"
 	defaultLogDirname            = "logs"
 	defaultLogFilename           = "dcrstakepool.log"
-	defaultTicketChallengeMaxAge = 600
+	defaultTicketChallengeMaxAge = 600 // 10 minutes
 	defaultCookieSecure          = false
 	defaultDBHost                = "localhost"
 	defaultDBName                = "stakepool"
