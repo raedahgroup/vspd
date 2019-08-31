@@ -382,7 +382,7 @@ func (controller *MainController) APIPurchaseTicket(c web.C, r *http.Request) (*
 	if user != nil {
 		purchaseInfo := &poolapi.PurchaseInfo{
 			PoolAddress:   user.UserFeeAddr,
-			PoolFees:      controller.poolFees,
+			PoolFees:      controller.Cfg.PoolFees,
 			Script:        user.MultiSigScript,
 			TicketAddress: user.MultiSigAddress,
 			VoteBits:      uint16(user.VoteBits),
@@ -398,7 +398,7 @@ func (controller *MainController) APIPurchaseTicket(c web.C, r *http.Request) (*
 		VoteBitsVersion: int64(controller.voteVersion),
 	}
 
-	remoteIP := getClientIP(r, controller.realIPHeader)
+	remoteIP := getClientIP(r, controller.Cfg.RealIPHeader)
 	log.Infof("APIPurchaseTicket POST from %v, created new user account %v. Inserting.", remoteIP, user.Email)
 
 	err := models.InsertUser(dbMap, user)
@@ -418,7 +418,7 @@ func (controller *MainController) APIPurchaseTicket(c web.C, r *http.Request) (*
 		return nil, codes.Unavailable, "system error", errors.New("unable to process wallet commands")
 	}
 
-	poolValidateAddress, err := controller.StakepooldServers.ValidateAddress(pooladdress)
+	poolValidateAddress, err := controller.Cfg.StakepooldServers.ValidateAddress(pooladdress)
 	if err != nil {
 		log.Errorf("unable to validate address: %v", err)
 		return nil, codes.Unavailable, "system error", errors.New("unable to process wallet commands")
@@ -435,7 +435,7 @@ func (controller *MainController) APIPurchaseTicket(c web.C, r *http.Request) (*
 		return nil, codes.Unavailable, "system error", errors.New("unable to process wallet commands")
 	}
 
-	createMultiSig, err := controller.StakepooldServers.CreateMultisig([]string{poolPubKeyAddr, userPubKeyAddr})
+	createMultiSig, err := controller.Cfg.StakepooldServers.CreateMultisig([]string{poolPubKeyAddr, userPubKeyAddr})
 	if err != nil {
 		return nil, codes.Unavailable, "system error", errors.New("unable to process wallet commands")
 	}
@@ -448,7 +448,7 @@ func (controller *MainController) APIPurchaseTicket(c web.C, r *http.Request) (*
 
 	// Import the redeem script
 	var importedHeight int64
-	importedHeight, err = controller.StakepooldServers.ImportScript(serializedScript)
+	importedHeight, err = controller.Cfg.StakepooldServers.ImportScript(serializedScript)
 	if err != nil {
 		log.Warnf("unexpected error importing multisig redeem script: %v", err)
 		return nil, codes.Unavailable, "system error", errors.New("unable to process wallet commands")
@@ -473,7 +473,7 @@ func (controller *MainController) APIPurchaseTicket(c web.C, r *http.Request) (*
 
 	purchaseInfo := &poolapi.PurchaseInfo{
 		PoolAddress:   userFeeAddr.EncodeAddress(),
-		PoolFees:      controller.poolFees,
+		PoolFees:      controller.Cfg.PoolFees,
 		Script:        createMultiSig.RedeemScript,
 		TicketAddress: createMultiSig.Address,
 		VoteBits:      uint16(user.VoteBits),
