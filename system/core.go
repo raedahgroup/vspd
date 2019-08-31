@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/decred/dcrstakepool/models"
+	"github.com/decred/dcrstakepool/stakepooldclient"
 	"github.com/go-gorp/gorp"
 	"github.com/gorilla/sessions"
 	"github.com/zenazn/goji/web"
@@ -21,11 +22,14 @@ import (
 )
 
 type Application struct {
-	APISecret     string
-	Template      *template.Template
-	TemplatesPath string
-	Store         *SQLStore
-	DbMap         *gorp.DbMap
+	APISecret                 string
+	TicketChallengeMaxAge     int64
+	ProcessedTicketChallenges *ticketChallengesCache
+	Template                  *template.Template
+	TemplatesPath             string
+	Store                     *SQLStore
+	DbMap                     *gorp.DbMap
+	StakepooldConnMan         *stakepooldclient.StakepooldManager
 }
 
 // GojiWebHandlerFunc is an adaptor that allows an http.HanderFunc where a
@@ -36,10 +40,9 @@ func GojiWebHandlerFunc(h http.HandlerFunc) web.HandlerFunc {
 	}
 }
 
-func (application *Application) Init(APISecret string, baseURL string,
-	cookieSecret string, cookieSecure bool, DBHost string, DBName string,
-	DBPassword string,
-	DBPort string, DBUser string) {
+func (application *Application) Init(APISecret string, ticketChallengeMaxAge int64,
+	baseURL string, cookieSecret string, cookieSecure bool,
+	DBHost string, DBName string, DBPassword string, DBPort string, DBUser string) {
 
 	application.DbMap = models.GetDbMap(
 		APISecret,
@@ -62,6 +65,8 @@ func (application *Application) Init(APISecret string, baseURL string,
 	}
 
 	application.APISecret = APISecret
+	application.TicketChallengeMaxAge = ticketChallengeMaxAge
+	application.ProcessedTicketChallenges = newTicketChallengesCache()
 }
 
 func (application *Application) LoadTemplates(templatePath string) error {

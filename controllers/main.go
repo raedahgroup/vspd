@@ -287,6 +287,10 @@ func (controller *MainController) API(c web.C, r *http.Request) *system.APIRespo
 		}
 	}
 
+	if invalidAuthMessage := c.Env["AuthErrorMessage"]; invalidAuthMessage != "" && code == codes.Unauthenticated {
+		err = fmt.Errorf("invalid api authorization: %s", invalidAuthMessage)
+	}
+
 	if err != nil {
 		status = "error"
 		response = response + " - " + err.Error()

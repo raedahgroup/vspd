@@ -63,7 +63,7 @@ func runMain() error {
 
 	var application = &system.Application{}
 
-	application.Init(cfg.APISecret, cfg.BaseURL, cfg.CookieSecret,
+	application.Init(cfg.APISecret, cfg.TicketChallengeMaxAge, cfg.BaseURL, cfg.CookieSecret,
 		cfg.CookieSecure, cfg.DBHost, cfg.DBName, cfg.DBPassword, cfg.DBPort,
 		cfg.DBUser)
 	if application.DbMap == nil {
@@ -88,6 +88,8 @@ func runMain() error {
 	if err != nil {
 		return fmt.Errorf("Failed to connect to stakepoold host: %v", err)
 	}
+
+	application.StakepooldConnMan = stakepooldConnMan
 
 	var sender email.Sender
 	if cfg.SMTPHost != "" {

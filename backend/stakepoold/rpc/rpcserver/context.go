@@ -16,6 +16,7 @@ import (
 	wallettypes "github.com/decred/dcrwallet/rpc/jsonrpc/types"
 
 	"github.com/decred/dcrd/rpcclient/v3"
+	"github.com/decred/dcrd/txscript"
 	"github.com/decred/dcrd/wire"
 	"github.com/decred/dcrstakepool/backend/stakepoold/userdata"
 	"github.com/decred/dcrwallet/wallet/v2/txrules"
@@ -97,6 +98,12 @@ type ticketMetadata struct {
 	signDuration time.Duration             // time to generatevote
 	sendDuration time.Duration             // time to sendrawtransaction
 	err          error                     // log errors along the way
+}
+
+type TicketInfo struct {
+	MultiSigAddress string
+	VspFeeAddress   string
+	OwnerFeeAddress string
 }
 
 // EvaluateStakePoolTicket evaluates a voting service ticket to see if it's
@@ -367,6 +374,49 @@ func (ctx *AppContext) GetTickets(includeImmature bool) ([]*chainhash.Hash, erro
 	}
 
 	return tickets, nil
+}
+
+func (ctx *AppContext) GetTicketInfo(ticketHash string) (ticketInfo *TicketInfo, err error) {
+	hash, err := chainhash.NewHashFromStr(ticketHash)
+	if err != nil {
+		log.Errorf("GetTicketInfo: Failed to parse ticket hash: %v", err)
+		return
+	}
+
+	res, err := ctx.WalletConnection.GetTransaction(hash)
+	if err != nil {
+		log.Errorf("GetTicketInfo: GetTransaction rpc failed: %v", err)
+		return
+	}
+
+	// get txout addresses using tx hes
+	msgTx, err := MsgTxFromHex(res.Hex)
+	if err != nil {
+		return nil, fmt.Errorf("GetTicketInfo: MsgTxFromHex failed for %v: %v", res.Hex, err)
+	}
+
+	p2shOut := msgTx.TxOut[0]
+	_, addrs, _, _ := txscript.ExtractPkScriptAddrs(p2shOut.Version, p2shOut.PkScript, ctx.Params)
+	multiSigAddress := addrs[0]
+
+	vspCommitmentOut := msgTx.TxOut[1]
+	vspCommitAddr, err := stake.AddrFromSStxPkScrCommitment(vspCommitmentOut.PkScript, ctx.Params)
+	if err != nil {
+		return nil, fmt.Errorf("GetTicketInfo: Failed to parse commit out addr: %s", err.Error())
+	}
+
+	ownerCommitmentOut := msgTx.TxOut[3]
+	ownerCommitAddr, err := stake.AddrFromSStxPkScrCommitment(ownerCommitmentOut.PkScript, ctx.Params)
+	if err != nil {
+		return nil, fmt.Errorf("GetTicketInfo: Failed to parse commit out addr: %s", err.Error())
+	}
+
+	ticketInfo = &TicketInfo{
+		MultiSigAddress: multiSigAddress.EncodeAddress(),
+		VspFeeAddress:   vspCommitAddr.EncodeAddress(),
+		OwnerFeeAddress: ownerCommitAddr.EncodeAddress(),
+	}
+	return
 }
 
 func (ctx *AppContext) StakePoolUserInfo(multisigAddress string) (*wallettypes.StakePoolUserInfoResult, error) {
